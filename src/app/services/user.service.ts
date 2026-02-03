@@ -3,12 +3,15 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { User } from '../models/user.model';
 import { PageResponse } from '../models/page-response.model';
+import { environment } from '../environment/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class UserService {
-  private apiUrl = 'http://localhost:8080/api/users';
+
+  // ✅ add /users here
+  private readonly apiUrl = `${environment.apiUrl}/users`;
 
   constructor(private http: HttpClient) {}
 
@@ -18,9 +21,10 @@ export class UserService {
     sortBy: string = 'id',
     sortDir: string = 'asc'
   ): Observable<PageResponse<User>> {
+
     const params = new HttpParams()
-      .set('page', page.toString())
-      .set('size', size.toString())
+      .set('page', page)
+      .set('size', size)
       .set('sortBy', sortBy)
       .set('sortDir', sortDir);
 
@@ -43,7 +47,7 @@ export class UserService {
     return this.http.delete<void>(`${this.apiUrl}/${id}`);
   }
 
-  // 👇 New methods for photo upload
+  // ✅ photo upload
   uploadPhoto(userId: number, file: File): Observable<User> {
     const formData = new FormData();
     formData.append('file', file);
