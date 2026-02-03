@@ -13,6 +13,7 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
+            "outputPath": "dist/user-management",
             "browser": "src/main.ts",
             "polyfills": [
               "zone.js"
@@ -54,6 +55,13 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "host": "0.0.0.0",
+            "allowedHosts": [
+              "neerajbalodi.com",
+              "localhost"
+            ]
+          },
           "configurations": {
             "production": {
               "buildTarget": "user-management:build:production"
