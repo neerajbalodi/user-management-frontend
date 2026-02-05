@@ -1,0 +1,101 @@
+pipeline {
+    agent any
+    tools {
+        nodejs 'NodeJS-20'
+    }
+    environment {
+        APP_NAME     = 'user-management'
+        EC2_HOST     = '13.60.72.77'
+        EC2_USER     = 'ubuntu'
+        DEPLOY_PATH  = '/var/www/angular-app'
+    }
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['production', 'staging', 'dev'],
+            description: 'Deployment environment'
+        )
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'Main',
+                    url: 'https://github.com/neerajbalodi/user-management-frontend.git'
+            }
+        }
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm ci'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'npx ng build --configuration=production'
+                sh '''
+                    echo "=== Build Output ==="
+                    ls -la dist/
+                    ls -la dist/user-management/ || true
+                    ls -la dist/user-management/browser/ || true
+                '''
+            }
+        }
+        stage('Deploy') {
+            steps {
+                echo "=== DEPLOY STAGE STARTED ==="
+                echo "Environment: ${params.ENVIRONMENT}"
+                echo "Target: ${EC2_USER}@${EC2_HOST}"
+                
+                sshagent(['ec2-ssh-key']) {
+                    sh '''
+                        echo "=== Step 1: Finding dist folder ==="
+                        if [ -d "dist/user-management/browser" ]; then
+                            DIST_FOLDER="dist/user-management/browser"
+                        else
+                            DIST_FOLDER="dist/user-management"
+                        fi
+                        echo "Using: $DIST_FOLDER"
+                        ls -la "$DIST_FOLDER"
+                        
+                        echo "=== Step 2: Creating tar ==="
+                        tar -czf dist.tar.gz -C "$DIST_FOLDER" .
+                        ls -la dist.tar.gz
+                        
+                        echo "=== Step 3: Testing SSH connection ==="
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ubuntu@13.60.72.77 "echo 'SSH OK'"
+                        
+                        echo "=== Step 4: Copying file ==="
+                        scp -v -o StrictHostKeyChecking=no dist.tar.gz ubuntu@13.60.72.77:/tmp/
+                        
+                        echo "=== Step 5: Verifying copy ==="
+                        ssh -o StrictHostKeyChecking=no ubuntu@13.60.72.77 "ls -la /tmp/dist.tar.gz"
+                        
+                        echo "=== Step 6: Deploying ==="
+                        ssh -o StrictHostKeyChecking=no ubuntu@13.60.72.77 "
+                            sudo mkdir -p /var/www/angular-app
+                            sudo rm -rf /var/www/angular-app/*
+                            sudo tar -xzf /tmp/dist.tar.gz -C /var/www/angular-app
+                            sudo chown -R www-data:www-data /var/www/angular-app
+                            rm -f /tmp/dist.tar.gz
+                        "
+                        
+                        echo "=== Step 7: Verifying deployment ==="
+                        ssh -o StrictHostKeyChecking=no ubuntu@13.60.72.77 "ls -la /var/www/angular-app/"
+                        
+                        echo "=== DEPLOY COMPLETE ==="
+                    '''
+                }
+            }
+        }
+    }
+    post {
+        success {
+            echo "✅ Deployed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed!"
+        }
+        always {
+            cleanWs()
+        }
+    }
+}
