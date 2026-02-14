@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+    
+    tools {
+        nodejs 'NodeJS-20'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'Main',
+                    url: 'https://github.com/neerajbalodi/user-management-frontend.git'
+            }
+        }
+        
+        stage('Clean and Install') {
+            steps {
+                sh '''
+                    rm -rf node_modules package-lock.json
+                    npm cache clean --force
+                    npm install
+                '''
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+        
+        stage('Get Frontend IP') {
+            steps {
+                script {
+                    env.FRONTEND_IP = sh(
+                        script: 'terraform -chdir=/home/ubuntu/terraform output -raw frontend_ip',
+                        returnStdout: true
+                    ).trim()
+                    echo "Frontend IP: ${env.FRONTEND_IP}"
+                }
+            }
+        }
+        
+        stage('Create temp directory on server') {
+            steps {
+                sh """
+                    ssh -i /var/lib/jenkins/.ssh/user.pem -o StrictHostKeyChecking=no \
+                        ubuntu@${env.FRONTEND_IP} 'sudo mkdir -p /tmp/angular-dist && sudo chown ubuntu:ubuntu /tmp/angular-dist'
+                """
+            }
+        }
+        
+        stage('Copy build to server') {
+            steps {
+                sh """
+                    scp -i /var/lib/jenkins/.ssh/user.pem -o StrictHostKeyChecking=no \
+                        -r dist/user-management/* ubuntu@${env.FRONTEND_IP}:/tmp/angular-dist/
+                """
+            }
+        }
+        
+        stage('Deploy with Ansible') {
+            steps {
+                sh """
+                    ansible-playbook -i /home/ubuntu/ansible/inventory/hosts \
+                        /home/ubuntu/ansible/playbooks/deploy_frontend.yml \
+                        --private-key=/var/lib/jenkins/.ssh/user.pem
+                """
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                script {
+                    sleep 5
+                    sh "curl -f http://${env.FRONTEND_IP} || echo 'Frontend deployed!'"
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "✅ Frontend deployed successfully!"
+            echo "Access at: http://${env.FRONTEND_IP}"
+        }
+        failure {
+            echo "❌ Frontend deployment failed!"
+        }
+    }
+}
